@@ -3,6 +3,7 @@ package imds
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -40,19 +41,28 @@ func NewPoller(client *Client, store *cache.Store, interval time.Duration, logge
 func (p *Poller) FetchStaticMetadata(ctx context.Context) error {
 	p.logger.Info("fetching static metadata")
 
-	instanceID, _, err := p.client.Get(ctx, "meta-data/instance-id")
+	instanceID, status, err := p.client.Get(ctx, "meta-data/instance-id")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch instance-id: %w", err)
+	}
+	if status != 200 {
+		return fmt.Errorf("failed to fetch instance-id: status %d", status)
 	}
 
-	instanceType, _, err := p.client.Get(ctx, "meta-data/instance-type")
+	instanceType, status, err := p.client.Get(ctx, "meta-data/instance-type")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch instance-type: %w", err)
+	}
+	if status != 200 {
+		return fmt.Errorf("failed to fetch instance-type: status %d", status)
 	}
 
-	az, _, err := p.client.Get(ctx, "meta-data/placement/availability-zone")
+	az, status, err := p.client.Get(ctx, "meta-data/placement/availability-zone")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch availability-zone: %w", err)
+	}
+	if status != 200 {
+		return fmt.Errorf("failed to fetch availability-zone: status %d", status)
 	}
 
 	lifecycle, status, _ := p.client.Get(ctx, "meta-data/instance-life-cycle")
@@ -73,6 +83,7 @@ func (p *Poller) FetchStaticMetadata(ctx context.Context) error {
 		s.Region = region
 		s.Lifecycle = lifecycleStr
 		s.IMDSVersion = p.client.Version()
+		s.IMDSAvailable = true
 	})
 
 	return nil
@@ -95,27 +106,36 @@ func (p *Poller) Run(ctx context.Context) {
 func (p *Poller) poll(ctx context.Context) {
 	p.logger.Debug("polling IMDS for events")
 
+	success := true
+
 	// 1. Spot Termination
-	p.pollSpotAction(ctx)
+	if err := p.pollSpotAction(ctx); err != nil {
+		success = false
+	}
 
 	// 2. Rebalance Recommendation
-	p.pollRebalance(ctx)
+	if err := p.pollRebalance(ctx); err != nil {
+		success = false
+	}
 
 	// 3. Scheduled Maintenance
-	p.pollMaintenance(ctx)
+	if err := p.pollMaintenance(ctx); err != nil {
+		success = false
+	}
 
 	p.store.Update(func(s *cache.LifecycleState) {
-		s.LastPollSuccessful = time.Now()
-		s.IMDSAvailable = true
+		if success {
+			s.LastPollSuccessful = time.Now()
+		}
+		s.IMDSAvailable = success
 	})
 }
 
-func (p *Poller) pollSpotAction(ctx context.Context) {
+func (p *Poller) pollSpotAction(ctx context.Context) error {
 	body, status, err := p.client.Get(ctx, "meta-data/spot/instance-action")
 	if err != nil {
 		p.logger.Error("failed to poll spot action", "error", err)
-		p.store.Update(func(s *cache.LifecycleState) { s.IMDSAvailable = false })
-		return
+		return err
 	}
 
 	if status == 404 {
@@ -123,13 +143,18 @@ func (p *Poller) pollSpotAction(ctx context.Context) {
 			s.TerminationImminent = false
 			s.TerminationAction = ""
 		})
-		return
+		return nil
+	}
+
+	if status != 200 {
+		p.logger.Error("unexpected status polling spot action", "status", status)
+		return fmt.Errorf("unexpected status: %d", status)
 	}
 
 	var ia instanceAction
 	if err := json.Unmarshal(body, &ia); err != nil {
 		p.logger.Error("failed to unmarshal spot action", "error", err)
-		return
+		return err
 	}
 
 	p.store.Update(func(s *cache.LifecycleState) {
@@ -137,42 +162,54 @@ func (p *Poller) pollSpotAction(ctx context.Context) {
 		s.TerminationAction = ia.Action
 		s.TerminationTime = ia.Time
 	})
+	return nil
 }
 
-func (p *Poller) pollRebalance(ctx context.Context) {
+func (p *Poller) pollRebalance(ctx context.Context) error {
 	body, status, err := p.client.Get(ctx, "meta-data/events/recommendations/rebalance")
 	if err != nil {
 		p.logger.Error("failed to poll rebalance recommendation", "error", err)
-		return
+		return err
 	}
 
 	if status == 404 {
 		p.store.Update(func(s *cache.LifecycleState) { s.RebalanceRecommended = false })
-		return
+		return nil
+	}
+
+	if status != 200 {
+		p.logger.Error("unexpected status polling rebalance recommendation", "status", status)
+		return fmt.Errorf("unexpected status: %d", status)
 	}
 
 	var ie instanceEvent
 	if err := json.Unmarshal(body, &ie); err != nil {
 		p.logger.Error("failed to unmarshal rebalance event", "error", err)
-		return
+		return err
 	}
 
 	p.store.Update(func(s *cache.LifecycleState) {
 		s.RebalanceRecommended = true
 		s.RebalanceTime = ie.NoticeTime
 	})
+	return nil
 }
 
-func (p *Poller) pollMaintenance(ctx context.Context) {
+func (p *Poller) pollMaintenance(ctx context.Context) error {
 	body, status, err := p.client.Get(ctx, "meta-data/events/maintenance/scheduled")
 	if err != nil {
 		p.logger.Error("failed to poll scheduled maintenance", "error", err)
-		return
+		return err
 	}
 
 	if status == 404 {
 		p.store.Update(func(s *cache.LifecycleState) { s.MaintenanceActive = false })
-		return
+		return nil
+	}
+
+	if status != 200 {
+		p.logger.Error("unexpected status polling scheduled maintenance", "status", status)
+		return fmt.Errorf("unexpected status: %d", status)
 	}
 
 	// Maintenance returns a list of events if active
@@ -180,4 +217,5 @@ func (p *Poller) pollMaintenance(ctx context.Context) {
 	p.store.Update(func(s *cache.LifecycleState) {
 		s.MaintenanceActive = active
 	})
+	return nil
 }

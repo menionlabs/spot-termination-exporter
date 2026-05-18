@@ -15,12 +15,14 @@ import (
 )
 
 func setupAEMM(ctx context.Context, t *testing.T, name string, cmd []string) (testcontainers.Container, string, string) {
+	// Ryuk must be disabled in some environments where privileged containers or certain socket mounts are restricted
 	os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
 
-	// Use log-based check if IMDSv2 is enforced, because the wait probe doesn't send a token
+	// Use a more robust wait strategy: wait for both the port and a basic endpoint
 	var waitStrategy wait.Strategy = wait.ForHTTP("/latest/meta-data/instance-id").WithPort("1338/tcp")
 	for _, c := range cmd {
 		if c == "--imdsv2" {
+			// For IMDSv2 enforcement, we must wait for the log because HTTP probe doesn't use tokens
 			waitStrategy = wait.ForLog("Initiating ec2-metadata-mock").WithOccurrence(1)
 			break
 		}
@@ -32,7 +34,7 @@ func setupAEMM(ctx context.Context, t *testing.T, name string, cmd []string) (te
 			ExposedPorts: []string{"1338/tcp"},
 			Cmd:          cmd,
 			WaitingFor:   waitStrategy,
-			Name:         "aemm-" + name,
+			// Removed fixed Name to avoid collisions in shared CI environments
 		},
 		Started: true,
 	}
@@ -42,7 +44,7 @@ func setupAEMM(ctx context.Context, t *testing.T, name string, cmd []string) (te
 		t.Fatalf("failed to start container %s: %v", name, err)
 	}
 
-	// Final safeguard sleep
+	// Wait a bit for the internal mock server to fully stabilize its handlers
 	time.Sleep(1 * time.Second)
 
 	mappedPort, err := container.MappedPort(ctx, "1338")
