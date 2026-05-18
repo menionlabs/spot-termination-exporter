@@ -1,7 +1,7 @@
 # build stage
 # This line is the critical change:
 # It tells Docker to run this build stage using your Mac's native ARM64 architecture
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine3.21 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 # --- No changes needed below here ---
 COPY . /go/src/github.com/maskedweaver/spot-termination-exporter
