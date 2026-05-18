@@ -11,6 +11,7 @@ import (
 // Run the exporter with the flag --metadata-endpoint = "http://localhost:9092/latest/meta-data/"
 func main() {
 	http.HandleFunc("/latest/meta-data/spot/instance-action", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		terminationTime := time.Now().Add(2 * time.Minute)
 		utc, _ := time.LoadLocation("UTC")
 		fmt.Fprintf(w, "{\"action\": \"stop\", \"time\": \"%s\"}", terminationTime.In(utc).Format(time.RFC3339))
@@ -23,6 +24,7 @@ func main() {
 		fmt.Fprint(w, "c5.9xlarge")
 	})
 	http.HandleFunc("/latest/meta-data/events/recommendations/rebalance", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		noticeTime := time.Now()
 		utc, _ := time.LoadLocation("UTC")
 		fmt.Fprintf(w, "{\"noticeTime\":\"%s\"}", noticeTime.In(utc).Format(time.RFC3339))
