@@ -1,23 +1,24 @@
 go:
-  version: 1.9.2
+  version: 1.26
 repository:
-    path: github.com/gjtempleton/spot-termination-exporter
+  path: https://github.com/maskedweaver/spot-termination-exporter
 build:
-    prefix: .
-    binaries:
-        - name: spot-termination-exporter
-          path: .
-    flags: -a -tags netgo
-    ldflags: |
-        -s
-        -X {{repoPath}}/version.Version={{.Version}}
-        -X {{repoPath}}/version.Revision={{.Revision}}
-        -X {{repoPath}}/version.Branch={{.Branch}}
-        -X {{repoPath}}/version.BuildUser={{user}}@{{host}}
-        -X {{repoPath}}/version.BuildDate={{date "20160902-15:04:05"}}
+  prefix: .
+  binaries:
+      - name: spot-termination-exporter
+        path: .
+
+  flags: -a -tags netgo
+  ldflags: |
+    -s
+    -X {{repoPath}}/version.Version={{.Version}}
+    -X {{repoPath}}/version.Revision={{.Revision}}
+    -X {{repoPath}}/version.Branch={{.Branch}}
+    -X {{repoPath}}/version.BuildUser={{user}}@{{host}}
+    -X {{repoPath}}/version.BuildDate={{date "20160902-15:04:05"}}
 tarball:
-    prefix: .
+  prefix: .
 crossbuild:
-    platforms:
-        - linux/amd64
-        - linux/386
+  platforms:
+    - linux/amd64
+    - linux/386

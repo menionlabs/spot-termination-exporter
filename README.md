@@ -1,90 +1,76 @@
-## Spot instance termination exporter
+# Spot Instance Lifecycle Exporter
 
-Prometheus [exporters](https://prometheus.io/docs/instrumenting/writing_exporters) are used to export metrics from third-party systems as Prometheus metrics - this is an exporter to scrape for AWS spot price termination notice and rebalance recommendations.
+A robust, fault-tolerant Prometheus exporter for AWS EC2 instance lifecycle events, including Spot interruptions, Rebalance recommendations, and Scheduled maintenance.
 
-### Status Of This Repository
+## Key Features (v2.0.0 Rewrite)
 
-This repository is a maintained fork of [banzaicloud/spot-termination-exporter](https://github.com/banzaicloud/spot-termination-exporter) with a small number of changes due to the lack of activity in the upstream:
+*   **Asynchronous Polling:** Decouples IMDS calls from Prometheus scrapes. A background poller ensures `/metrics` scrapes are instantaneous and never block on AWS API latency.
+*   **IMDS Version Auto-Negotiation:** Automatically detects and uses the most secure version available (IMDSv2 with token management or IMDSv1).
+*   **Comprehensive Lifecycle Events:**
+    *   **Spot Interruption Notices:** The 2-minute warning.
+    *   **Rebalance Recommendations:** Early signals of elevated disruption risk.
+    *   **Scheduled Maintenance:** Hardware and OS maintenance notifications.
+*   **Rich Contextual Labels:** All metrics include `instance_id`, `instance_type`, `availability_zone`, `region`, and `instance_life_cycle` (spot vs on-demand).
+*   **Kubernetes Integration:** Optionally attach Kubernetes node labels to metrics for seamless correlation.
 
-1. The addition of `instance_type` labels to metrics relating to instance termination and rebalance recommendations to allow for analysis of metrics by instance type
-1. The addition of a metric for [rebalance recommendation events](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/rebalance-recommendations.html) from the metadata service
-1. Moved from dep to go modules and updated the version of go and base docker images
+## Configuration
 
-Images for this fork are published to Github's container registry, and are available under [ghcr.io/gjtempleton/spot-termination-exporter](https://github.com/gjtempleton/spot-termination-exporter/pkgs/container/spot-termination-exporter).
+The exporter can be configured via CLI flags:
 
-### Spot instance lifecycle
-
-* User submits a bid to run a desired number of EC2 instances of a particular type. The bid includes the price that the user is willing to pay to use the instance for an hour.
-* If the bid price exceeds the current spot price (that is determined by AWS based on current supply and demand) the instances are started.
-* If the current spot price rises above the bid price or there is no available capacity, the spot instance is interrupted and reclaimed by AWS. 2 minutes before the interruption the internal metadata endpoint on the instance is updated with the termination info.
-* If the instance is interrupted the action taken by AWS varies depending on the interruption behaviour (start, stop or hibernate) and the request type (one-time or persistent). These can be configured when requesting the instance. See more about this [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-requests.html#creating-spot-request-status)
-
-### Spot instance termination notice
-
-The Termination Notice is accessible to code running on the instance via the instance’s metadata at `http://169.254.169.254/latest/meta-data/spot/termination-time`. This field becomes available when the instance has been marked for termination and will contain the time when a shutdown signal will be sent to the instance’s operating system.
-At that time, the Spot Instance Request’s bid status will be set to `marked-for-termination.`
-The bid status is accessible via the `DescribeSpotInstanceRequests` API for use by programs that manage Spot bids and instances.
-
-### Spot instance rebalance recommendations
-
-[Rebalance recommendations](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/rebalance-recommendations.html) are advance notice that a given spot instance is at elevated risk of spot disruption, they can either be accessed via AWS EventBridge or via the instance metadata endpoint. A number of AWS tools automatically handle rebalance recommendations, for instance [EKS managed node groups](https://docs.aws.amazon.com/eks/latest/userguide/managed-node-groups.html#managed-node-group-capacity-types).
-
-### Quick start
-
-The project uses the [promu](https://github.com/prometheus/promu) Prometheus utility tool. To build the exporter `promu` needs to be installed. To install promu and build the exporter:
-
-```bash
-go get github.com/prometheus/promu
-promu build
-```
-
-The following options can be configured when starting the exporter:
-
-```bash
-./spot-termination-exporter --help
-Usage of ./spot-termintation-exporter:
+```text
+Usage of ./spot-termination-exporter:
+  -attach-node-labels
+        attach labels from Kubernetes node (requires NODE_NAME env)
   -bind-addr string
         bind address for the metrics server (default ":9189")
+  -kubeconfig string
+        path to kubeconfig file
   -log-level string
-        log level (default "info")
+        log level (debug, info, warn, error) (default "info")
   -metadata-endpoint string
         metadata endpoint to query (default "http://169.254.169.254/latest/meta-data/")
   -metrics-path string
         path to metrics endpoint (default "/metrics")
-
+  -poll-interval duration
+        interval to poll IMDS for events (default 5s)
+  -token-endpoint string
+        token endpoint to query for IMDSv2 (default "http://169.254.169.254/latest/api/token")
 ```
 
-### Test locally
+## Metrics
 
-The AWS instance metadata is available at `http://169.254.169.254/latest/meta-data/`. By default this is the endpoint that is being queried by the exporter but it is quite hard to reproduce a termination notice or rebalance recommendation on an AWS instance for testing, so the meta-data endpoint can be changed in the configuration.
-There is a test server in the `utils` directory that can be used to mock the behavior of the metadata endpoint. It listens on port 9092 and provides dummy responses for `/instance-id`, `/spot/instance-action`, `instance-type`, and `events/recommendations/rebalance`. It can be started with:
+All metrics include the following common labels: `instance_id`, `instance_type`, `availability_zone`, `region`, `instance_life_cycle`.
+
+| Metric Name | Type | Description |
+| :--- | :--- | :--- |
+| `aws_instance_termination_imminent` | Gauge | 1 if a spot termination is scheduled, 0 otherwise. Includes `instance_action` label. |
+| `aws_instance_termination_in` | Gauge | Seconds until the instance is terminated. |
+| `aws_instance_rebalance_recommended` | Gauge | 1 if AWS recommends rebalancing, 0 otherwise. |
+| `aws_instance_scheduled_maintenance_active` | Gauge | 1 if a maintenance event is scheduled, 0 otherwise. |
+| `aws_instance_metadata_service_available` | Gauge | 1 if IMDS is reachable, 0 otherwise. |
+| `aws_instance_imds_version` | Gauge | The active IMDS version (1 or 2). |
+| `spot_termination_exporter_last_poll_successful_timestamp_seconds` | Gauge | Unix timestamp of the last successful internal cache update. |
+
+## Local Testing
+
+### Using the Integration Test
+The project includes an integration test that uses [amazon-ec2-metadata-mock](https://github.com/aws/amazon-ec2-metadata-mock) to simulate real AWS behaviors.
 
 ```bash
-go run util/test_server.go
+# Requires Docker daemon running
+go test -v -run TestWithAEMM
 ```
 
-The exporter can be started with this configuration to query this endpoint locally:
+### Manual Testing with AEMM
+You can run the mock container manually and point the exporter to it:
 
 ```bash
-./spot-termination-exporter --metadata-endpoint http://localhost:9092/latest/meta-data/ --log-level debug
+docker run -d -p 1337:1337 public.ecr.aws/aws-ec2/amazon-ec2-metadata-mock:latest --spot-itn
+./spot-termination-exporter --metadata-endpoint http://localhost:1337/latest/meta-data/ --log-level debug
 ```
 
-### Metrics
+## Building
 
-```text
-# HELP aws_instance_metadata_service_available Metadata service available
-# TYPE aws_instance_metadata_service_available gauge
-aws_instance_metadata_service_available{instance_id="i-0d2aab13057917887"} 1
-# HELP aws_instance_metadata_service_events_available Metadata service events endpoint available
-# TYPE aws_instance_metadata_service_events_available gauge
-aws_instance_metadata_service_events_available{instance_id="i-0d2aab13057917887"} 1
-# HELP aws_instance_rebalance_recommended Instance rebalance is recommended
-# TYPE aws_instance_rebalance_recommended gauge
-aws_instance_rebalance_recommended{instance_id="i-0d2aab13057917887",instance_type="c5.9xlarge"} 1
-# HELP aws_instance_termination_imminent Instance is about to be terminated
-# TYPE aws_instance_termination_imminent gauge
-aws_instance_termination_imminent{instance_action="stop",instance_id="i-0d2aab13057917887",instance_type="c5.9xlarge"} 1
-# HELP aws_instance_termination_in Instance will be terminated in
-# TYPE aws_instance_termination_in gauge
-aws_instance_termination_in{instance_id="i-0d2aab13057917887",instance_type="c5.9xlarge"} 119.714615
+```bash
+go build -o spot-termination-exporter .
 ```

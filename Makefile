@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO           := GO15VENDOREXPERIMENT=1 go
+GO           := go
 FIRST_GOPATH := $(firstword $(subst :, ,$(GOPATH)))
 PROMU        := $(FIRST_GOPATH)/bin/promu
 pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
@@ -21,12 +21,7 @@ BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_NAME       ?= spot-termination-exporter
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 
-ifdef DEBUG
-	bindata_flags = -debug
-endif
-
-
-all: format build
+all: format build test
 
 style:
 	@echo ">> checking code style"
@@ -39,6 +34,14 @@ format:
 vet:
 	@echo ">> vetting code"
 	@$(GO) vet $(pkgs)
+
+test:
+	@echo ">> running tests"
+	@$(GO) test -v ./...
+
+test-short:
+	@echo ">> running short tests"
+	@$(GO) test -v ./... -short
 
 build: promu
 	@echo ">> building binaries"
@@ -53,9 +56,8 @@ docker:
 	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
 promu:
-	@GOOS=$(shell uname -s | tr A-Z a-z) \
-	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
-	$(GO) get -u github.com/prometheus/promu
+	@echo ">> installing promu"
+	@$(GO) install github.com/prometheus/promu@latest
 
 
-.PHONY: all style format build vet tarball docker promu
+.PHONY: all style format build vet tarball docker promu test test-short

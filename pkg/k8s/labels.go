@@ -1,12 +1,12 @@
-// main.go
-package main
+package k8s
 
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
+	"regexp"
 	"time"
+	"unicode"
 
 	"github.com/prometheus/client_golang/prometheus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,41 +19,51 @@ func buildConfig(kubeconfig string) (*rest.Config, error) {
 	if kubeconfig != "" {
 		return clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
-	// try in-cluster, then default kubeconfig
 	if cfg, err := rest.InClusterConfig(); err == nil {
 		return cfg, nil
 	}
-
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: ""},
 		&clientcmd.ConfigOverrides{}).ClientConfig()
 }
 
-func getNodeLabels(kubeconfig string) (prometheus.Labels, error) {
+func sanitizeLabelName(name string) string {
+	var invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+	sanitized := invalidLabelCharRE.ReplaceAllString(name, "_")
+	if len(sanitized) > 0 && unicode.IsDigit(rune(sanitized[0])) {
+		sanitized = "_" + sanitized
+	}
+	return sanitized
+}
 
+func GetNodeLabels(kubeconfig string) (prometheus.Labels, error) {
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
-		return nil, fmt.Errorf("required NODE_NAME not set")
+		return nil, fmt.Errorf("required NODE_NAME environment variable not set")
 	}
 
 	cfg, err := buildConfig(kubeconfig)
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
 	}
 
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		log.Fatalf("clientset: %v", err)
+		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
 	defer cancel()
 
 	node, err := cs.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
-		log.Fatalf("get node %q: %v", nodeName, err)
+		return nil, fmt.Errorf("failed to get node %q: %w", nodeName, err)
 	}
 
-	return node.Labels, nil
+	sanitizedLabels := make(prometheus.Labels)
+	for k, v := range node.Labels {
+		sanitizedLabels[sanitizeLabelName(k)] = v
+	}
+
+	return sanitizedLabels, nil
 }
