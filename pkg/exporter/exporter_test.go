@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maskedweaver/spot-termination-exporter/pkg/cache"
+	"github.com/menionlabs/spot-termination-exporter/pkg/cache"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )

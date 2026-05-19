@@ -9,7 +9,7 @@ import (
 
 	"log/slog"
 
-	"github.com/maskedweaver/spot-termination-exporter/pkg/cache"
+	"github.com/menionlabs/spot-termination-exporter/pkg/cache"
 )
 
 type instanceAction struct {

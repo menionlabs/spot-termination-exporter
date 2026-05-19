@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maskedweaver/spot-termination-exporter/pkg/cache"
-	"github.com/maskedweaver/spot-termination-exporter/pkg/imds"
+	"github.com/menionlabs/spot-termination-exporter/pkg/cache"
+	"github.com/menionlabs/spot-termination-exporter/pkg/imds"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )

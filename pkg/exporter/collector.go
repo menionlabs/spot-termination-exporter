@@ -3,14 +3,13 @@ package exporter
 import (
 	"time"
 
-	"github.com/maskedweaver/spot-termination-exporter/pkg/cache"
+	"github.com/menionlabs/spot-termination-exporter/pkg/cache"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type Collector struct {
-	store      *cache.Store
-	nodeLabels prometheus.Labels
-
+	store                *cache.Store
+	nodeLabels           prometheus.Labels
 	imdsAvailable        *prometheus.Desc
 	imdsEventsAvailable  *prometheus.Desc
 	terminationImminent  *prometheus.Desc
@@ -22,13 +21,17 @@ type Collector struct {
 }
 
 func NewCollector(store *cache.Store, nodeLabels prometheus.Labels) *Collector {
-	// Standard labels for all metrics
-	commonLabels := []string{"instance_id", "instance_type", "availability_zone", "region", "instance_life_cycle"}
+	commonLabels := []string{
+		"instance_id",
+		"instance_type",
+		"availability_zone",
+		"region",
+		"instance_life_cycle",
+	}
 
 	return &Collector{
 		store:      store,
 		nodeLabels: nodeLabels,
-
 		imdsAvailable: prometheus.NewDesc(
 			"aws_instance_metadata_service_available",
 			"Metadata service available",
