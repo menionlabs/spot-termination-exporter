@@ -10,7 +10,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/maskedweaver/spot-termination-exporter/pkg/cache"
+	"github.com/menionlabs/spot-termination-exporter/pkg/cache"
 )
 
 func TestIMDSVersionNegotiation(t *testing.T) {

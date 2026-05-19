@@ -1,4 +1,4 @@
-module github.com/maskedweaver/spot-termination-exporter
+module github.com/menionlabs/spot-termination-exporter
 
 go 1.26.2
 

@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/maskedweaver/spot-termination-exporter/pkg/cache"
-	"github.com/maskedweaver/spot-termination-exporter/pkg/exporter"
-	"github.com/maskedweaver/spot-termination-exporter/pkg/imds"
-	"github.com/maskedweaver/spot-termination-exporter/pkg/k8s"
+	"github.com/menionlabs/spot-termination-exporter/pkg/cache"
+	"github.com/menionlabs/spot-termination-exporter/pkg/exporter"
+	"github.com/menionlabs/spot-termination-exporter/pkg/imds"
+	"github.com/menionlabs/spot-termination-exporter/pkg/k8s"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -47,7 +47,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
-	logger.Info("Starting spot-termination-exporter", "version", "v2.0.0-rewrite")
+	logger.Info("Starting spot-termination-exporter", "version", "v2.0.0")
 
 	// 2. Initialize Cache
 	store := cache.NewStore()
